@@ -1,0 +1,82 @@
+{
+  "root": true,
+  "extends": [
+    "eslint:recommended",
+    "plugin:react-hooks/recommended",
+    "prettier"
+  ],
+  "plugins": [
+    "react-refresh",
+    "prettier"
+  ],
+  "parserOptions": {
+    "ecmaVersion": "latest",
+    "sourceType": "module",
+    "ecmaFeatures": {
+      "jsx": true
+    }
+  },
+  "env": {
+    "browser": true,
+    "es2022": true,
+    "node": true
+  },
+  "settings": {
+    "react": {
+      "version": "detect"
+    }
+  },
+  "ignorePatterns": [
+    "dist/",
+    "build/",
+    "node_modules/",
+    "coverage/",
+    "*.min.js",
+    "*.min.css",
+    ".eslintcache",
+    "*.config.js",
+    "vite.config.*",
+    "tailwind.config.*",
+    "postcss.config.*",
+    "*.lock",
+    "*.log"
+  ],
+  "rules": {
+    "prettier/prettier": "error",
+    "no-unused-vars": [
+      "warn",
+      {
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_",
+        "caughtErrorsIgnorePattern": "^_",
+        "ignoreRestSiblings": true,
+        "caughtErrors": "all"
+      }
+    ],
+    "react-refresh/only-export-components": "warn",
+    "react-hooks/exhaustive-deps": "warn",
+    "no-case-declarations": "warn",
+    "no-undef": "error",
+    "no-useless-escape": "warn"
+  },
+  "overrides": [
+    {
+      "files": [
+        "**/*.{js,jsx}"
+      ],
+      "rules": {
+        "react/jsx-uses-react": "off",
+        "react/react-in-jsx-scope": "off"
+      }
+    },
+    {
+      "files": [
+        "**/*.test.js",
+        "**/*.spec.js"
+      ],
+      "env": {
+        "jest": true
+      }
+    }
+  ]
+}
