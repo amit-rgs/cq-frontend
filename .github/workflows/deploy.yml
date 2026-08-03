@@ -1,0 +1,137 @@
+name: Deploy CQ Frontend
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Select Environment"
+        required: true
+        default: dev
+        type: choice
+        options:
+          - dev
+          - test
+          - prod
+
+      image_tag:
+        description: "Artifact Registry Image Tag"
+        required: true
+        default: latest
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  REGION: ${{ vars.GCP_REGION }}
+  REPOSITORY: ${{ vars.GAR_REPOSITORY }}
+
+jobs:
+  deploy:
+    name: Deploy to Cloud Run
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      #####################################################
+      # Authenticate GCP
+      #####################################################
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Setup Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      #####################################################
+      # Select Cloud Run Service
+      #####################################################
+
+      - name: Configure Environment
+        run: |
+
+          case "${{ github.event.inputs.environment }}" in
+
+            dev)
+              echo "SERVICE_NAME=cq-frontend-dev" >> $GITHUB_ENV
+              ;;
+
+            test)
+              echo "SERVICE_NAME=cq-frontend-test" >> $GITHUB_ENV
+              ;;
+
+            prod)
+              echo "SERVICE_NAME=cq-frontend" >> $GITHUB_ENV
+              ;;
+
+          esac
+
+      #####################################################
+      # Deploy Existing Image
+      #####################################################
+
+      - name: Deploy Cloud Run Service
+        run: |
+
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/cq-frontend:${{ github.event.inputs.image_tag }}"
+
+          echo "Deploying Image:"
+          echo "$IMAGE"
+
+          gcloud run deploy ${SERVICE_NAME} \
+            --image=$IMAGE \
+            --project=${PROJECT_ID} \
+            --region=${REGION} \
+            --platform=managed \
+            --quiet
+
+      #####################################################
+      # Verify Deployment
+      #####################################################
+
+      - name: Verify Deployment
+        run: |
+
+          gcloud run services describe ${SERVICE_NAME} \
+            --region=${REGION} \
+            --format='value(status.url)'
+
+      #####################################################
+      # Deployment Summary
+      #####################################################
+
+      - name: Deployment Summary
+        run: |
+
+          echo "======================================="
+          echo " Cloud Run Deployment Successful"
+          echo "======================================="
+
+          echo "Environment : ${{ github.event.inputs.environment }}"
+          echo "Service     : ${SERVICE_NAME}"
+
+          echo ""
+
+          echo "Image"
+
+          echo "${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/cq-frontend:${{ github.event.inputs.image_tag }}"
+
+          echo ""
+
+          echo "Cloud Run URL"
+
+          gcloud run services describe ${SERVICE_NAME} \
+            --region=${REGION} \
+            --format='value(status.url)'
+
+          echo ""
+          echo "======================================="
