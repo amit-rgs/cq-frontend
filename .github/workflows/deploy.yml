@@ -1,5 +1,4 @@
 name: Deploy CQ Frontend
-
 on:
   workflow_dispatch:
     inputs:
@@ -12,126 +11,104 @@ on:
           - dev
           - test
           - prod
-
       image_tag:
-        description: "Artifact Registry Image Tag"
+        description: "ECR Image Tag"
         required: true
         default: latest
         type: string
 
 permissions:
   contents: read
-  id-token: write
 
 env:
-  PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
-  REGION: ${{ vars.GCP_REGION }}
-  REPOSITORY: ${{ vars.GAR_REPOSITORY }}
+  AWS_REGION: eu-north-1
+  ECR_REPOSITORY: frontend-repo
+  ECS_CLUSTER: cq-frontend-cluster
+  SERVICE_NAME: cq-frontend
 
 jobs:
   deploy:
-    name: Deploy to Cloud Run
+    name: Deploy to ECS Fargate
     runs-on: ubuntu-latest
-
     steps:
-
       - name: Checkout Repository
         uses: actions/checkout@v4
 
       #####################################################
-      # Authenticate GCP
+      # Authenticate to AWS
       #####################################################
-
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Setup Google Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-        with:
-          project_id: ${{ env.PROJECT_ID }}
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
 
       #####################################################
-      # Select Cloud Run Service
+      # Select ECS Service / Task Definition
       #####################################################
-
       - name: Configure Environment
         run: |
-
           case "${{ github.event.inputs.environment }}" in
-
             dev)
-              echo "SERVICE_NAME=cq-frontend-dev" >> $GITHUB_ENV
+              echo "SERVICE_NAME=cq-frontend-dev-service" >> $GITHUB_ENV
+              echo "TASK_DEFINITION_FAMILY=cq-frontend-dev" >> $GITHUB_ENV
               ;;
-
             test)
-              echo "SERVICE_NAME=cq-frontend-test" >> $GITHUB_ENV
+              echo "SERVICE_NAME=cq-frontend-test-service" >> $GITHUB_ENV
+              echo "TASK_DEFINITION_FAMILY=cq-frontend-test" >> $GITHUB_ENV
               ;;
-
             prod)
-              echo "SERVICE_NAME=cq-frontend" >> $GITHUB_ENV
+              echo "SERVICE_NAME=cq-frontend-service" >> $GITHUB_ENV
+              echo "TASK_DEFINITION_FAMILY=cq-frontend" >> $GITHUB_ENV
               ;;
-
           esac
 
       #####################################################
-      # Deploy Existing Image
+      # Render New Task Definition with Updated Image
       #####################################################
-
-      - name: Deploy Cloud Run Service
+      - name: Download Current Task Definition
         run: |
+          aws ecs describe-task-definition \
+            --task-definition ${TASK_DEFINITION_FAMILY} \
+            --query taskDefinition \
+            > task-definition.json
 
-          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/cq-frontend:${{ github.event.inputs.image_tag }}"
-
-          echo "Deploying Image:"
-          echo "$IMAGE"
-
-          gcloud run deploy ${SERVICE_NAME} \
-            --image=$IMAGE \
-            --project=${PROJECT_ID} \
-            --region=${REGION} \
-            --platform=managed \
-            --quiet
+      - name: Fill in New Image ID
+        id: render-task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: cq-frontend
+          image: ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.event.inputs.image_tag }}
 
       #####################################################
-      # Verify Deployment
+      # Deploy to ECS Service
       #####################################################
-
-      - name: Verify Deployment
-        run: |
-
-          gcloud run services describe ${SERVICE_NAME} \
-            --region=${REGION} \
-            --format='value(status.url)'
+      - name: Deploy to Amazon ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render-task-def.outputs.task-definition }}
+          service: ${{ env.SERVICE_NAME }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
 
       #####################################################
       # Deployment Summary
       #####################################################
-
       - name: Deployment Summary
         run: |
-
           echo "======================================="
-          echo " Cloud Run Deployment Successful"
+          echo " ECS Deployment Successful"
           echo "======================================="
-
           echo "Environment : ${{ github.event.inputs.environment }}"
+          echo "Cluster     : ${ECS_CLUSTER}"
           echo "Service     : ${SERVICE_NAME}"
-
           echo ""
-
           echo "Image"
-
-          echo "${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/cq-frontend:${{ github.event.inputs.image_tag }}"
-
-          echo ""
-
-          echo "Cloud Run URL"
-
-          gcloud run services describe ${SERVICE_NAME} \
-            --region=${REGION} \
-            --format='value(status.url)'
-
-          echo ""
+          echo "${{ steps.ecr-login.outputs.registry }}/${ECR_REPOSITORY}:${{ github.event.inputs.image_tag }}"
           echo "======================================="
