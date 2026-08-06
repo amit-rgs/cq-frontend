@@ -24,7 +24,9 @@ env:
   AWS_REGION: eu-north-1
   ECR_REPOSITORY: frontend-repo
   ECS_CLUSTER: cq-frontend-cluster
-  SERVICE_NAME: cq-frontend
+  ECS_SERVICE: cq-frontend
+  TASK_DEFINITION_FAMILY: cq-frontend
+  CONTAINER_NAME: cq-frontend
 
 jobs:
   deploy:
@@ -49,26 +51,6 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       #####################################################
-      # Select ECS Service / Task Definition
-      #####################################################
-      - name: Configure Environment
-        run: |
-          case "${{ github.event.inputs.environment }}" in
-            dev)
-              echo "SERVICE_NAME=cq-frontend-dev-service" >> $GITHUB_ENV
-              echo "TASK_DEFINITION_FAMILY=cq-frontend-dev" >> $GITHUB_ENV
-              ;;
-            test)
-              echo "SERVICE_NAME=cq-frontend-test-service" >> $GITHUB_ENV
-              echo "TASK_DEFINITION_FAMILY=cq-frontend-test" >> $GITHUB_ENV
-              ;;
-            prod)
-              echo "SERVICE_NAME=cq-frontend-service" >> $GITHUB_ENV
-              echo "TASK_DEFINITION_FAMILY=cq-frontend" >> $GITHUB_ENV
-              ;;
-          esac
-
-      #####################################################
       # Render New Task Definition with Updated Image
       #####################################################
       - name: Download Current Task Definition
@@ -83,7 +65,7 @@ jobs:
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
           task-definition: task-definition.json
-          container-name: cq-frontend
+          container-name: ${{ env.CONTAINER_NAME }}
           image: ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.event.inputs.image_tag }}
 
       #####################################################
@@ -93,7 +75,7 @@ jobs:
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
           task-definition: ${{ steps.render-task-def.outputs.task-definition }}
-          service: ${{ env.SERVICE_NAME }}
+          service: ${{ env.ECS_SERVICE }}
           cluster: ${{ env.ECS_CLUSTER }}
           wait-for-service-stability: true
 
@@ -107,7 +89,7 @@ jobs:
           echo "======================================="
           echo "Environment : ${{ github.event.inputs.environment }}"
           echo "Cluster     : ${ECS_CLUSTER}"
-          echo "Service     : ${SERVICE_NAME}"
+          echo "Service     : ${ECS_SERVICE}"
           echo ""
           echo "Image"
           echo "${{ steps.ecr-login.outputs.registry }}/${ECR_REPOSITORY}:${{ github.event.inputs.image_tag }}"
